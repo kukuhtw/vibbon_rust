@@ -196,7 +196,7 @@ Silakan buat **issue** untuk bug/feature request, atau **pull request** bila ing
 
 ## 📄 Lisensi
 
-**MIT** (atau sesuaikan bila Anda menginginkan lisensi lain).
+**MIT** 
 
 ---
 
