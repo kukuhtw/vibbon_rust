@@ -1,5 +1,3 @@
----
-
 # Vibbon — Solusi Watermark Video untuk Kampanye Brand & Event
 
 **Vibbon** adalah web service kecil berbasis **Rust + Actix** yang memproses **video UGC** (user-generated content) dan menempelkan **frame PNG transparan / watermark** secara otomatis menggunakan **FFmpeg**. Cocok untuk kebutuhan **kampanye brand**, **event organizer**, maupun **UGC activation** di TikTok/IG Reels/YouTube Shorts.
@@ -206,6 +204,4 @@ Silakan buat **issue** untuk bug/feature request, atau **pull request** bila ing
 * Di **Windows**, jika Anda menaruh FFmpeg di `C:\ffmpeg\bin`, Vibbon akan **menambahkan path tersebut** ke `PATH` proses saat runtime (bila folder ada). Ini mempermudah pemanggilan `ffmpeg.exe` tanpa konfigurasi tambahan.
 * Penamaan **endpoint & field** dapat berubah mengikuti implementasi di `src/`. Gunakan contoh di atas sebagai acuan, lalu sesuaikan dengan rute aktual pada kode Anda.
 
----
 
-Butuh versi README dalam bahasa Inggris juga? Saya bisa siapkan langsung.
