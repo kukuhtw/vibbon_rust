@@ -469,7 +469,7 @@ fn render_home(warn: Option<&str>) -> String {
     button:hover{{opacity:.9}}.hint{{color:#666;font-size:.9em}}code{{background:#f6f6f6;padding:2px 6px;border-radius:6px}}
   </style>
 </head><body>
-  <h1>Video Twibbon Generator (Rust)</h1>
+  <h1>Vibbon Generator (Rust)</h1>
   {warn_html}
   <p class="hint">Pilih sumber video: upload berkas atau rekam dari kamera. Maks 30 detik.</p>
 
