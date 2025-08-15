@@ -14,51 +14,24 @@
 =============================================================================*/
 
 
-// Menyajikan file statis (mis. folder public/assets)
 use actix_files::Files;
-// Menangani upload form bertipe multipart/form-data secara streaming
 use actix_multipart::Multipart;
-// Komponen utama Actix Web:
-// - get, post: attribute macro untuk mendaftarkan handler GET/POST
-// - App: builder konfigurasi aplikasi
-// - Error as ActixError: alias tipe error Actix
-// - HttpResponse: membentuk respons HTTP
-// - HttpServer: menjalankan server HTTP async
-// - Responder: trait untuk tipe yang bisa dikonversi jadi respons
 use actix_web::{get, post, App, Error as ActixError, HttpResponse, HttpServer, Responder};
-// Ekstensi untuk Stream (mis. .next().await) saat membaca bagian-bagian Multipart
 use futures_util::StreamExt;
-// Variabel statik yang diinisialisasi saat pertama kali dipakai (lazy)
-// berguna untuk config global (path upload, dsb.)
 use once_cell::sync::Lazy;
-// Membersihkan nama file dari karakter berbahaya/ilegal sebelum disimpan
 use sanitize_filename::sanitize;
-// Derive trait Deserialize (serde) untuk parsing body/query ke struct
 use serde::Deserialize;
 use std::{
-    // Cow (Clone-On-Write): menampung borrow/owned string secara efisien
     borrow::Cow,
-    // Akses variabel environment (PORT, UPLOAD_DIR, dsb.)
     env,
-    // Representasi string OS (nama file) yang tidak selalu UTF-8
     ffi::OsStr,
-    // Tipe path untuk operasi filesystem (Path = borrowed, PathBuf = owned)
     path::{Path, PathBuf},
-    // Konfigurasi stdio saat menjalankan proses anak (redirect/pipe)
     process::Stdio,
-    // Mendapatkan timestamp (mis. menamai file dengan waktu sekarang)
     time::SystemTime,
 };
-// Tokio async I/O dan proses:
-// - fs, fs::File: operasi file/direktori non-blocking
-// - AsyncWriteExt: menulis buffer async (.write_all().await)
-// - process::Command: menjalankan proses eksternal secara async
 use tokio::{fs, fs::File, io::AsyncWriteExt, process::Command};
-// Membuat identifier unik (mis. nama file sementara: <uuid>.tmp)
 use uuid::Uuid;
-// Mencari path executable di PATH untuk memastikan tool eksternal tersedia
 use which::which;
-
 
 // ================== CONFIG ==================
 const MAX_DURATION_SEC: f64 = 30.0;
@@ -75,14 +48,9 @@ struct Bins {
     ffmpeg: String,
     ffprobe: String,
 }
-
-// BINS adalah variabel global yang di-inisialisasi malas (lazy):
-// closure di dalam Lazy::new hanya dieksekusi sekali saat BINS pertama kali diakses.
-
 static BINS: Lazy<Bins> = Lazy::new(|| {
     #[cfg(target_os = "windows")]
     {
-        // Sesuaikan dengan lokasi file path ffmpeg anda 
         let default_bin = Path::new("C:\\ffmpeg\\bin");
         if default_bin.exists() {
             if let Ok(old) = env::var("PATH") {
@@ -106,7 +74,6 @@ static BINS: Lazy<Bins> = Lazy::new(|| {
 });
 
 // ================== TEMPLATE MODEL ==================
-// Replace the OverlayType enum definition with this:
 #[derive(Clone)]
 #[allow(dead_code)]
 enum OverlayType {
@@ -145,7 +112,6 @@ static TEMPLATES: Lazy<Vec<Template>> = Lazy::new(|| {
 
 // ================== HELPERS ==================
 fn ensure_dirs() -> std::io::Result<()> {
-    // Pakai std::fs agar tak perlu await
     for d in ["uploads", "outputs", "templates"] {
         std::fs::create_dir_all(d)?;
     }
@@ -153,7 +119,7 @@ fn ensure_dirs() -> std::io::Result<()> {
 }
 
 fn random_name(prefix: &str) -> String {
-    format!("{}{}", prefix, uuid::Uuid::new_v4().simple())
+    format!("{}{}", prefix, Uuid::new_v4().simple())
 }
 
 async fn ffprobe_duration(ffprobe: &str, path: &Path) -> anyhow::Result<f64> {
@@ -230,19 +196,15 @@ async fn save_multipart(mut payload: Multipart) -> Result<PostFields, ActixError
 
             fields.upload_path = Some(tmp_path);
             fields.upload_ext = Some(ext);
-            // v0.6: content_type() langsung &Mime
-            
 
-fields.upload_mime = Some(
-    field.content_type()
-        .map(|mime| mime.essence_str().to_string())
-        .unwrap_or_else(|| "application/octet-stream".to_string())
-);
-
-
-
+            fields.upload_mime = Some(
+                field
+                    .content_type()
+                    .map(|mime| mime.essence_str().to_string())
+                    .unwrap_or_else(|| "application/octet-stream".to_string()),
+            );
         } else {
-            // field teks
+            // text fields
             let mut bytes = Vec::new();
             while let Some(chunk) = field.next().await {
                 let data = chunk?;
@@ -332,6 +294,152 @@ fn build_filter_graph(tpl: &Template) -> (String, usize) {
 }
 
 // ================== HTML ==================
+static HOME_JS: &str = r#"
+(function(){
+  const form = document.getElementById('twb-form');
+  const srcRadios = form.querySelectorAll('input[name="source"]');
+  const uploadPane = document.getElementById('upload-pane');
+  const recordPane = document.getElementById('record-pane');
+
+  const cam = document.getElementById('cam');
+  const playback = document.getElementById('playback');
+  const btnOpen = document.getElementById('btnOpen');
+  const btnRec  = document.getElementById('btnRec');
+  const btnStop = document.getElementById('btnStop');
+  const timerEl = document.getElementById('timer');
+
+  const btnSubmit = document.getElementById('btnSubmit');
+  const waitNote  = document.getElementById('waitNote');
+
+  let stream = null, mr = null, chunks = [], recordedBlob = null, recTimer = null, startTs = 0;
+  const MAX_MS = 30000;
+
+  function setBusy(b){
+    btnSubmit.disabled = b;
+    btnSubmit.textContent = b ? 'Memproses…' : 'Generate';
+    waitNote.style.display = b ? 'block' : 'none';
+  }
+  function fmt(ms){
+    const s = Math.floor(ms/1000);
+    const m = String(Math.floor(s/60)).padStart(2,'0');
+    const ss = String(s%60).padStart(2,'0');
+    return m+':'+ss;
+  }
+  function startTimer(){
+    startTs = Date.now();
+    stopTimer();
+    recTimer = setInterval(()=>{ timerEl.textContent = fmt(Date.now()-startTs); }, 200);
+  }
+  function stopTimer(){
+    if (recTimer) { clearInterval(recTimer); recTimer = null; }
+  }
+  function stopStream(){
+    if (stream){
+      stream.getTracks().forEach(t=>t.stop());
+      stream = null;
+      cam.srcObject = null;
+    }
+    btnRec.disabled = true;
+    btnStop.disabled = true;
+  }
+  function switchPane(){
+    const v = form.source.value;
+    uploadPane.hidden = v !== 'upload';
+    recordPane.hidden = v !== 'record';
+    if (v !== 'record') {
+      stopStream();
+      playback.hidden = true;
+      recordedBlob = null;
+      timerEl.textContent = '00:00';
+    }
+  }
+  srcRadios.forEach(r=>r.addEventListener('change', switchPane));
+  switchPane();
+
+  // ===== Kamera =====
+  btnOpen.addEventListener('click', async ()=>{
+    try {
+      stream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: 'user', width: {ideal: 720}, height: {ideal: 1280} },
+        audio: true
+      });
+      cam.srcObject = stream;
+      btnRec.disabled = false;
+    } catch (e){
+      alert('Tidak bisa mengakses kamera/mikrofon: ' + (e.message||e));
+    }
+  });
+
+  btnRec.addEventListener('click', ()=>{
+    if (!stream) return;
+    if (!('MediaRecorder' in window)) {
+      alert('Browser Anda belum mendukung MediaRecorder. Gunakan Chrome/Edge/Firefox terbaru, atau upload file.');
+      return;
+    }
+    // Prefer MP4 (Safari), fallback WEBM
+    let mime = null;
+    if (MediaRecorder.isTypeSupported('video/mp4;codecs=avc1')) mime = 'video/mp4;codecs=avc1';
+    else if (MediaRecorder.isTypeSupported('video/mp4'))       mime = 'video/mp4';
+    else if (MediaRecorder.isTypeSupported('video/webm;codecs=vp9')) mime = 'video/webm;codecs=vp9';
+    else if (MediaRecorder.isTypeSupported('video/webm;codecs=vp8')) mime = 'video/webm;codecs=vp8';
+    else mime = 'video/webm';
+
+    chunks = [];
+    recordedBlob = null;
+    mr = new MediaRecorder(stream, { mimeType: mime, videoBitsPerSecond: 2_500_000 });
+    mr.ondataavailable = e => { if (e.data && e.data.size) chunks.push(e.data); };
+    mr.onstop = ()=>{
+      stopTimer();
+      recordedBlob = new Blob(chunks, { type: mr.mimeType || 'video/webm' });
+      chunks = [];
+      playback.src = URL.createObjectURL(recordedBlob);
+      playback.hidden = false;
+      btnRec.disabled = false;
+      btnStop.disabled = true;
+    };
+    mr.start(250);
+    btnRec.disabled = true;
+    btnStop.disabled = false;
+    startTimer();
+    setTimeout(()=>{ if (mr && mr.state === 'recording') mr.stop(); }, MAX_MS);
+  });
+
+  btnStop.addEventListener('click', ()=>{
+    if (mr && mr.state === 'recording') mr.stop();
+  });
+
+  // ===== Submit: Upload biasa (MP4) =====
+  form.addEventListener('submit', (e)=>{
+    if (form.source.value === 'record') return; // record ditangani handler di bawah
+    setBusy(true); // cegah double submit
+  });
+
+  // ===== Submit: Rekaman (kirim blob via fetch) =====
+  form.addEventListener('submit', async (e)=>{
+    if (form.source.value !== 'record') return;
+    e.preventDefault();
+    if (!recordedBlob) { alert('Silakan rekam dulu videonya.'); return; }
+
+    try {
+      setBusy(true);
+      const guessedExt = (recordedBlob.type || '').includes('mp4') ? 'mp4' : 'webm';
+      const fd = new FormData();
+      fd.append('video', new File([recordedBlob], 'recorded-'+Date.now()+'.'+guessedExt, { type: recordedBlob.type || 'video/webm' }));
+      fd.append('template', form.template.value);
+      fd.append('title', form.title.value);
+      fd.append('source', 'record');
+
+      const res  = await fetch(form.action || location.href, { method:'POST', body:fd });
+      const html = await res.text();
+      document.open(); document.write(html); document.close();
+    } catch (err) {
+      setBusy(false);
+      alert('Gagal mengirim/ memproses: ' + (err?.message || err));
+    }
+  });
+})();
+"#;
+
 fn render_home(warn: Option<&str>) -> String {
     let warn_html = warn
         .map(|w| format!("<p style='color:#b00'>{}</p>", html_escape(w)))
@@ -404,10 +512,11 @@ fn render_home(warn: Option<&str>) -> String {
     <div id="waitNote" class="hint" style="display:none;margin-top:8px">⏳ Memproses… mohon tunggu sebentar.</div>
   </form>
 
-<script>
-/* ... JS sama persis seperti versi Anda ... (dipersingkat di sini) */
-</script>
-</body></html>"#
+  <script>{js}</script>
+</body></html>"#,
+        warn_html = warn_html,
+        opts = opts,
+        js = HOME_JS
     )
 }
 
@@ -598,8 +707,10 @@ async fn process_upload(payload: Multipart) -> Result<impl Responder, ActixError
     let full_cmd_for_view = {
         let mut s = format!("{} -y -i \"{}\" ", &BINS.ffmpeg, input_path.display());
         for ol in &tpl.overlays {
+            let _ = ol;
             s.push_str("-loop 1 -framerate 30 -i ");
             s.push('"');
+            // safe to print raw path here; it's a static string
             s.push_str(ol.path);
             s.push('"');
             s.push(' ');
