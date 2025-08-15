@@ -3,7 +3,8 @@
 **Vibbon** adalah web service kecil berbasis **Rust + Actix** yang memproses **video UGC** (user-generated content) dan menempelkan **frame PNG transparan / watermark** secara otomatis menggunakan **FFmpeg**. Cocok untuk kebutuhan **kampanye brand**, **event organizer**, maupun **UGC activation** di TikTok/IG Reels/YouTube Shorts.
 
 > “Twibbon versi video” — lebih engaging, durasi fleksibel, siap pakai untuk social media.
-
+>
+> Demo https://youtu.be/ffhgjGxagnA
 ---
 
 ## ✨ Fitur Utama
