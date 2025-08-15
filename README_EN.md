@@ -1,251 +1,207 @@
-# Vibbon — Video Watermark Service (Rust + Actix + FFmpeg)
+# Vibbon — Video Watermark Solution for Brand & Event Campaigns
 
-Vibbon is a lightweight **web service** that takes user-generated videos (UGC) and automatically applies a **transparent PNG frame/watermark** using **FFmpeg**. It’s designed for brand & event campaigns that need **consistent, vertical 9:16** outputs ready for TikTok, IG Reels, and YouTube Shorts.
+**Vibbon** is a lightweight **web service** built with **Rust + Actix** that processes **UGC videos** (user-generated content) and automatically applies a **transparent PNG frame / watermark** using **FFmpeg**. Perfect for **brand campaigns**, **event organizers**, and **UGC activations** on TikTok / IG Reels / YouTube Shorts.
 
-> Repo: `https://github.com/kukuhtw/vibbon_rust`
-> Demo video: `https://www.youtube.com/watch?v=ffhgjGxagnA`
-
----
-
-## ✨ Features
-
-* **Fast & efficient** pipeline powered by **Rust** + **Actix Web**
-* **Automatic PNG overlay** (transparent frame/watermark)
-* **Portrait 9:16 output** (default **720×1280**) optimized for social media
-* **Quality controls** via **CRF** and **x264 preset**
-* **Max duration enforcement** with optional auto-trim
-* **Fill mode**: `crop` (scale-to-cover) or `pad` (letterbox)
-* **Simple HTTP API** (multipart upload)
+> “A *video* version of a Twibbon” — more engaging, flexible duration, social-ready.
+>
+> Demo [https://youtu.be/ffhgjGxagnA](https://youtu.be/ffhgjGxagnA)
 
 ---
 
-## 🧱 Tech Stack
+## ✨ Key Features
 
-* **Rust** (async with Tokio)
-* **Actix Web** (HTTP server, multipart upload)
-* **FFmpeg** (video processing)
-* **once\_cell / Lazy** (binary path resolution)
-* **sanitize-filename** (safe uploads)
-* **uuid** (unique filenames)
-
----
-
-## 📦 Requirements
-
-* **Rust** 1.75+ (stable recommended)
-* **FFmpeg** 4.2+ available on `PATH`
-
-  * **Linux/macOS**: ensure `ffmpeg` is installed and discoverable
-  * **Windows**: Vibbon will try `C:\ffmpeg\bin` automatically; or add FFmpeg to `PATH`
+* **Transparent PNG Overlay** — apply frames/logos/watermarks to user videos.
+* **Portrait, Social-Ready Output** — default **720×1280 (9:16)**.
+* **Efficient Compression** — control **CRF** and **FFmpeg preset** (performance-friendly defaults).
+* **Duration Limit** — auto-trim to a maximum duration (e.g., 30 seconds) for lightweight outputs.
+* **Simple UI + API** — upload via web page or send over HTTP `multipart/form-data`.
+* **Cross-OS** — Windows, Linux, macOS (requires FFmpeg in PATH).
+* **Safe Filenames** — sanitize uploaded filenames to prevent harmful characters.
 
 ---
 
-## 🚀 Quick Start
+## 🏗️ Architecture Overview
+
+* **Web server**: \[Actix Web] + \[actix-multipart] for uploads
+* **Async runtime**: Tokio
+* **Media engine**: FFmpeg (spawned as an external process)
+* **Template**: HTML in `templates/` (simple front-end)
+* **Utilities**: `once_cell`, `uuid`, `sanitize-filename`, `futures-util`, `which`
+
+> On Windows, Vibbon automatically appends `C:\ffmpeg\bin` to the process `PATH` if that folder exists — making it easy to run `ffmpeg.exe` without manual PATH setup.
+
+---
+
+## 🧰 Requirements
+
+* **Rust** (stable)
+* **FFmpeg**:
+
+  * **Windows**: extract to `C:\ffmpeg\bin` (or ensure `ffmpeg.exe` is in PATH).
+  * **Ubuntu/Debian**: `sudo apt-get install ffmpeg`
+  * **macOS**: `brew install ffmpeg`
+
+---
+
+## 🚀 Getting Started (Development)
 
 ```bash
 # 1) Clone
 git clone https://github.com/kukuhtw/vibbon_rust.git
 cd vibbon_rust
 
-# 2) Build
-cargo build --release
+# 2) Run (dev)
+cargo run
 
-# 3) Run
+# or build release
+cargo build --release
 ./target/release/vibbon_rust
-# Server starts (default 0.0.0.0:8080 unless configured in code)
 ```
 
-Upload a video + overlay via `curl` (multipart):
+By default the server runs at `http://localhost:8080` (adjust as needed).
+
+---
+
+## 🌐 How to Use
+
+### 1) Via Web Page
+
+1. Open `http://localhost:8080`
+2. Upload a video (MP4/MOV/WEBM) — ideally < 30 seconds.
+3. Choose a **PNG frame template** if available (or use the default).
+4. Click **Render** → download the result (MP4) and share on social media.
+
+### 2) Via API (HTTP Multipart)
+
+Example `curl` (sample endpoint; match your routes in code):
 
 ```bash
-curl -X POST http://localhost:8080/api/v1/process \
-  -F "video=@samples/input.mp4" \
-  -F "overlay=@overlays/frame.png" \
-  -F "fill_mode=crop" \
-  -F "crf=23" \
-  -F "preset=veryfast" \
-  -F "out_w=720" \
-  -F "out_h=1280" \
-  -F "allow_trim=1" \
-  -F "max_duration_sec=30"
+curl -X POST http://localhost:8080/api/render \
+  -F "video=@/path/to/video.mp4" \
+  -F "overlay=@/path/to/frame.png" \
+  -o output.mp4
 ```
 
-**Response (JSON)**
+**Common form fields:**
 
-```json
-{
-  "ok": true,
-  "output": "/outputs/vibbon-5a9c...c1.mp4",
-  "width": 720,
-  "height": 1280,
-  "fill_mode": "crop",
-  "crf": 23,
-  "preset": "veryfast",
-  "duration_sec": 12.34
-}
-```
+* `video` — input video file (required)
+* `overlay` — transparent PNG file (optional if a default exists)
+* (Optional, depending on implementation) `layout=crop|pad`, `max_duration=30`, `width=720`, `height=1280`, `crf=23`, `preset=veryfast`.
 
-The processed file is served as a static file (e.g., `/outputs/...mp4`).
-
-> Tip: If you don’t send an `overlay`, the service can use a default overlay (e.g., `./overlays/frame.png`) if configured in code.
+> Exact endpoint names & parameters: please check `src/` (Actix handlers/controllers). This README provides a general scheme to ease adoption.
 
 ---
 
 ## ⚙️ Configuration
 
-Most defaults are set as **constants** at the top of the code (see `main.rs`):
+Common constants you’ll find in the code (tune at source):
 
-* `MAX_DURATION_SEC = 30.0`
-* `OUT_WIDTH = 720`
-* `OUT_HEIGHT = 1280`
-* `CRF = 23`
-* `PRESET = "veryfast"`
-* `ALLOW_TRIM = true`
-* `FILL_MODE = "crop"`  (`"crop"` or `"pad"`)
+* `MAX_DURATION_SEC` — output duration cap (e.g., `30.0`)
+* `OUT_WIDTH`, `OUT_HEIGHT` — output resolution (e.g., `720×1280`)
+* `CRF`, `PRESET` — FFmpeg quality & speed
+* `ALLOW_TRIM` — auto-trim when input exceeds the cap
 
-You can:
-
-* Change these defaults in code, **or**
-* Provide overrides per-request via form fields (`crf`, `preset`, `out_w`, `out_h`, `fill_mode`, `allow_trim`, `max_duration_sec`).
-
-**FFmpeg path resolution**
-
-* On Unix-like systems, the binary is resolved via `which ffmpeg`.
-* On Windows, Vibbon additionally checks `C:\ffmpeg\bin`.
+> Tip: you can expose these as **env vars** in the future, or provide **per-request query/form params**.
 
 ---
 
-## 🧩 API
-
-### `POST /api/v1/process` — Process a video
-
-**Content-Type**: `multipart/form-data`
-
-**Fields**
-
-* `video` **(required)**: the input video file (mp4/mov/webm…)
-* `overlay` *(optional)*: PNG with transparency to overlay
-* `overlay_url` *(optional)*: URL to a PNG to fetch and use as overlay
-* `out_w` *(int, default 720)*
-* `out_h` *(int, default 1280)*
-* `fill_mode` *(enum: `crop`|`pad`, default `crop`)*
-* `crf` *(int, default 23; lower = higher quality, typically 18–28)*
-* `preset` *(string, default `veryfast`; x264 presets: ultrafast…veryslow)*
-* `allow_trim` *(0|1, default 1)*: if 1 and duration > `max_duration_sec`, auto-trim
-* `max_duration_sec` *(float, default 30.0)*
-
-**Success (200)**
-
-```json
-{
-  "ok": true,
-  "output": "/outputs/....mp4",
-  "width": 720,
-  "height": 1280,
-  "duration_sec": 9.87
-}
-```
-
-**Errors (4xx/5xx)**
-
-```json
-{ "ok": false, "error": "Missing 'video' file" }
-```
-
----
-
-## 🏗️ How It Works
-
-1. **Upload**: Accept multipart (`video`, optional `overlay` or `overlay_url`).
-2. **Validate & sanitize** filenames; save to `/uploads`.
-3. **Inspect & (optionally) trim** if longer than `max_duration_sec` and `allow_trim=1`.
-4. **Scale** to fit the requested output size (default 720×1280):
-
-   * `crop` → scale-to-cover then center-crop (no letterbox)
-   * `pad`  → scale-to-fit then add black bars (letterbox)
-5. **Overlay** the transparent PNG frame on top.
-6. **Encode** with H.264 (`libx264`, `CRF`, `preset`) and `aac` audio.
-7. **Serve** the result from `/outputs` via static files.
-
-**Representative FFmpeg filter (crop mode)**
-
-```bash
-ffmpeg -i input.mp4 -i frame.png \
-  -filter_complex "[0:v]scale=720:1280:force_original_aspect_ratio=increase,\
-crop=720:1280,setsar=1[v];[v][1]overlay=0:0" \
-  -c:v libx264 -preset veryfast -crf 23 -c:a aac -movflags +faststart out.mp4
-```
-
-**Representative FFmpeg filter (pad mode)**
-
-```bash
-ffmpeg -i input.mp4 -i frame.png \
-  -filter_complex "[0:v]scale=720:1280:force_original_aspect_ratio=decrease,\
-pad=720:1280:(ow-iw)/2:(oh-ih)/2:color=black,setsar=1[v];[v][1]overlay=0:0" \
-  -c:v libx264 -preset veryfast -crf 23 -c:a aac -movflags +faststart out.mp4
-```
-
----
-
-## 📁 Suggested Project Structure
+## 🗂️ Directory Structure (brief)
 
 ```
 vibbon_rust/
-├─ src/
-│  └─ main.rs
-├─ overlays/
-│  └─ frame.png             # default overlay (optional)
-├─ uploads/                 # temporary uploads (gitignored)
-├─ outputs/                 # processed videos (gitignored)
-├─ samples/
-│  └─ input.mp4
+├─ src/                # Rust code (Actix, handlers, ffmpeg runner)
+├─ templates/          # Simple HTML (upload form, etc.)
 ├─ Cargo.toml
 └─ README.md
 ```
 
-> `uploads/` and `outputs/` are typically served statically by Actix (`actix_files::Files`).
+---
+
+## 🧪 FFmpeg Flow Example (conceptual)
+
+Basic overlay filter (illustration; may differ in code):
+
+```bash
+ffmpeg -i input.mp4 -i overlay.png \
+  -filter_complex "[0:v]scale=720:1280:force_original_aspect_ratio=increase,crop=720:1280[bg];[bg][1:v]overlay=(W-w)/2:(H-h)/2" \
+  -c:v libx264 -crf 23 -preset veryfast -c:a copy output.mp4
+```
+
+* **Crop mode**: scale-to-cover then crop to 9:16.
+* **Pad mode**: scale-to-fit then letterbox (use the `pad` filter).
 
 ---
 
-## 🔒 Notes on Security & Limits
+## 🔒 Security & Limits
 
-* Uploaded filenames are sanitized; unique names are generated.
-* Max duration limit (default 30s) prevents abuse; adjust as needed.
-* Consider reverse proxy limits (Nginx `client_max_body_size`, etc.).
-* For production, place behind a WAF/proxy and enforce auth/rate limits if exposed publicly.
+* **Filenames** are sanitized (avoid dangerous characters).
+* **File size**: enforce at your reverse proxy/web server as needed.
+* **Duration**: use `MAX_DURATION_SEC` to prevent heavy jobs.
+* **Temporary files**: ensure the `uploads/` (or similar) dir is writable and cleaned periodically.
+
+---
+
+## 🐳 (Optional) Run with Docker
+
+```Dockerfile
+FROM rust:1.79-slim AS build
+RUN apt-get update && apt-get install -y pkg-config libssl-dev && rm -rf /var/lib/apt/lists/*
+WORKDIR /app
+COPY . .
+RUN cargo build --release
+
+FROM debian:stable-slim
+RUN apt-get update && apt-get install -y ffmpeg ca-certificates && rm -rf /var/lib/apt/lists/*
+WORKDIR /app
+COPY --from=build /app/target/release/vibbon_rust /usr/local/bin/vibbon
+EXPOSE 8080
+CMD ["vibbon"]
+```
+
+```bash
+docker build -t vibbon .
+docker run --rm -p 8080:8080 vibbon
+```
 
 ---
 
 ## 🧭 Roadmap
 
-* [ ] Optional queue/offline processing
-* [ ] Config via env (`.env`) instead of compile-time constants
-* [ ] S3/GCS object storage adapters
-* [ ] Positionable overlays (x/y, gravity)
-* [ ] Multiple overlays / text layers
-* [ ] Web UI dropzone
+* [ ] Full parameterization via **ENV** (port, resolution, crf, preset, max duration)
+* [ ] **Multi-template** support (choose frames from a list)
+* [ ] Dynamic **text overlay** (campaign title, participant name)
+* [ ] **Queue/worker** for job batching
+* [ ] **Docker Compose** + reverse proxy
+* [ ] **Unit tests** for the ffmpeg command builder
 
 ---
 
 ## 🤝 Contributing
 
-PRs and issues are welcome! If you plan a larger change, please open an issue first to discuss scope and approach.
+Contributions welcome!
+Please open an **issue** for bugs/feature requests, or a **pull request** if you’re ready to propose changes.
 
 ---
 
-## 👤 Author & Contact
+## 👤 Author
 
 **Kukuh TW**
-
-* Email: **[kukuhtw@gmail.com](mailto:kukuhtw@gmail.com)**
-* WhatsApp: **[https://wa.me/628129893706](https://wa.me/628129893706)**
-* LinkedIn: **[https://id.linkedin.com/in/kukuhtw](https://id.linkedin.com/in/kukuhtw)**
-* X/Twitter: **@kukuhtw**
-* Instagram: **@kukuhtw**
-* Facebook: **[https://www.facebook.com/kukuhtw](https://www.facebook.com/kukuhtw)**
+📧 Email: **[kukuhtw@gmail.com](mailto:kukuhtw@gmail.com)**
+📱 WhatsApp: **[https://wa.me/628129893706](https://wa.me/628129893706)**
+📷 Instagram: **@kukuhtw**
+🐦 X / Twitter: **@kukuhtw**
+👍 Facebook: **[https://www.facebook.com/kukuhtw](https://www.facebook.com/kukuhtw)**
+💼 LinkedIn: **[https://id.linkedin.com/in/kukuhtw](https://id.linkedin.com/in/kukuhtw)**
 
 ---
 
-## 📜 License
+## 📄 License
 
+**MIT**
 
+---
+
+## 💡 Notes
+
+* On **Windows**, if you place FFmpeg in `C:\ffmpeg\bin`, Vibbon will **append that path** to the process `PATH` at runtime (if the folder exists). This helps run `ffmpeg.exe` without extra configuration.
+* Endpoint names & fields may evolve with the implementation in `src/`. Use the examples above as a guide, then align with your actual routes.
