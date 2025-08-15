@@ -1,5 +1,3 @@
-Berikut draft **README.md** untuk repositori **Vibbon – Solusi Watermark Video untuk Kampanye Brand & Event**. Silakan langsung copy–paste ke file `README.md` dan sesuaikan bagian yang perlu.
-
 ---
 
 # Vibbon — Solusi Watermark Video untuk Kampanye Brand & Event
